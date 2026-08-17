@@ -1,0 +1,33 @@
+Package: OccsClean
+Title: Biodiversity Occurrence Data Quality Assessment
+Version: 0.0.10
+Authors@R: 
+    person("Keegan B.", "Webb", email = "KeeganBWebb@gmail.com",
+           role = c("aut", "cre"))
+Description: Guided Shiny workflow for assessing and preparing biodiversity
+    occurrence data. Integrates established R packages behind a reproducible,
+    decision-aware quality assessment process.
+License: MIT + file LICENSE
+Encoding: UTF-8
+Roxygen: list(markdown = TRUE)
+RoxygenNote: 7.3.2
+Depends:
+    R (>= 4.1.0)
+Imports:
+    bslib,
+    CoordinateCleaner,
+    countrycode,
+    dplyr,
+    DT,
+    ggplot2,
+    htmltools,
+    htmlwidgets,
+    leaflet,
+    jsonlite,
+    R6,
+    readr,
+    rlang,
+    sf,
+    shiny,
+    tibble
+Language: en-US

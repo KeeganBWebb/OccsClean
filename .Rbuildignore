@@ -1,0 +1,14 @@
+^.*\.Rproj$
+^\.Rproj\.user$
+^renv$
+^renv\.lock$
+^\.github$
+^PROJECT\.md$
+^ROADMAP\.md$
+^LICENSE\.md$
+^\.gitignore$
+^README\.Rmd$
+^\.Rhistory$
+^\.RData$
+^\.Ruserdata$
+^data-raw$
