@@ -42,7 +42,7 @@ mod_about_server <- function(id) {
     output$version <- shiny::renderText({
       ver <- tryCatch(
         as.character(utils::packageVersion("OccsClean")),
-        error = function(e) "0.0.10"
+        error = function(e) "0.1.0"
       )
       paste0("OccsClean version: ", ver)
     })
