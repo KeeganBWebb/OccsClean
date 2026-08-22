@@ -41,8 +41,9 @@ mod_mapping_ui <- function(id) {
     shiny::h3("Mapping"),
     shiny::uiOutput(ns("warning")),
     shiny::p(
-      "Click a plotted occurrence that has a flag associated to pass or fail.",
-      "Failed records will be removed from the cleaned CSV export."
+      "Click a plotted occurrence to inspect it. Flagged records can be passed",
+      "or failed. Unflagged records can be flagged manually if you need to",
+      "exclude them from the cleaned export."
     ),
     shiny::p(
       class = "text-muted",
@@ -312,6 +313,14 @@ mod_mapping_server <- function(id, app_state) {
             class = "btn-success"
           )
         )
+      } else if (identical(status, "OK")) {
+        buttons <- list(
+          shiny::actionButton(
+            session$ns("map_mark_delete"),
+            "Flag record",
+            class = "btn-danger"
+          )
+        )
       }
 
       shiny::div(
@@ -330,7 +339,7 @@ mod_mapping_server <- function(id, app_state) {
       invisible(app_state$rev)
       row <- selected_row()
       help_txt <- if (is.null(row)) {
-        "Select a flagged point on the map to Pass or Fail it."
+        "Select a point on the map to inspect it."
       } else {
         status <- as.character(row$map_status[[1]])
         if (identical(status, "Failed")) {
@@ -340,7 +349,7 @@ mod_mapping_server <- function(id, app_state) {
         } else if (identical(status, "Flagged")) {
           "Use Pass to accept this flagged record, or Fail to exclude it."
         } else {
-          "Unflagged points are for context only. Pass/Fail is for flagged records."
+          "This record has no check flags. Use Flag record to exclude it from export."
         }
       }
       shiny::tags$p(
@@ -435,7 +444,7 @@ mod_mapping_server <- function(id, app_state) {
       }
       status <- as.character(row$map_status[[1]])
       if (identical(want, "fail")) {
-        return(status %in% c("Flagged", "Passed"))
+        return(status %in% c("Flagged", "Passed", "OK"))
       }
       if (identical(want, "pass")) {
         return(status %in% c("Flagged", "Failed"))
@@ -462,13 +471,18 @@ mod_mapping_server <- function(id, app_state) {
       if (length(s$get_assessment()) > 0) {
         findings <- s$get_findings_table()
       }
+      row <- selected_row()
+      was_unflagged <- !is.null(row) &&
+        identical(as.character(row$map_status[[1]]), "OK")
       mark_record_for_deletion(s$get_decisions(), rid, findings = findings)
       s$touch()
       bump_app_state(app_state)
-      shiny::showNotification(
-        paste0(rid, " failed."),
-        type = "message"
-      )
+      msg <- if (isTRUE(was_unflagged)) {
+        paste0(rid, " flagged for failure.")
+      } else {
+        paste0(rid, " failed.")
+      }
+      shiny::showNotification(msg, type = "message")
     })
 
     shiny::observeEvent(input$map_keep, {
@@ -586,7 +600,7 @@ mod_mapping_server <- function(id, app_state) {
           ),
           ""
         ),
-        "<br/><em>Flagged points can be Passed or Failed in the panel above.</em>"
+        "<br/><em>Selected points can be reviewed in the panel above.</em>"
       )
 
       cluster_opts <- if (isTRUE(cluster)) {
