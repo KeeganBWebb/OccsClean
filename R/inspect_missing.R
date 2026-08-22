@@ -26,6 +26,120 @@ summarize_missing_columns <- function(occ) {
   out[order(-out$pct_missing, out$column), , drop = FALSE]
 }
 
+#' @noRd
+missing_table_chunk_size <- function() {
+  20L
+}
+
+#' @noRd
+missing_table_max_chunks <- function() {
+  3L
+}
+
+#' Whether to use side-by-side missing table chunks
+#' @noRd
+use_wrapped_missing_table <- function(summary) {
+  if (is.null(summary) || !is.data.frame(summary) || nrow(summary) < 1) {
+    return(FALSE)
+  }
+  n <- nrow(summary)
+  n <= missing_table_chunk_size() * missing_table_max_chunks()
+}
+
+#' Split missing summary into table chunks
+#' @noRd
+missing_summary_table_chunks <- function(summary,
+                                         chunk_size = missing_table_chunk_size()) {
+  n <- nrow(summary)
+  if (n < 1) {
+    return(list())
+  }
+  chunk_size <- as.integer(chunk_size)[1]
+  if (is.na(chunk_size) || chunk_size < 1L) {
+    chunk_size <- missing_table_chunk_size()
+  }
+  indices <- split(seq_len(n), (seq_len(n) - 1L) %/% chunk_size)
+  lapply(indices, function(idx) summary[idx, , drop = FALSE])
+}
+
+#' HTML table for missing summary rows
+#' @noRd
+missing_summary_table_ui <- function(summary) {
+  if (is.null(summary) || !is.data.frame(summary) || nrow(summary) < 1) {
+    return(NULL)
+  }
+  rows <- lapply(seq_len(nrow(summary)), function(i) {
+    shiny::tags$tr(
+      shiny::tags$td(summary$column[i]),
+      shiny::tags$td(summary$n_missing[i]),
+      shiny::tags$td(summary$pct_missing[i])
+    )
+  })
+  shiny::tags$table(
+    class = "table table-striped table-bordered table-hover",
+    shiny::tags$thead(
+      shiny::tags$tr(
+        shiny::tags$th("column"),
+        shiny::tags$th("n_missing"),
+        shiny::tags$th("pct_missing")
+      )
+    ),
+    shiny::tags$tbody(rows)
+  )
+}
+
+#' Missing table UI with optional side-by-side chunks
+#' @noRd
+missing_summary_layout_ui <- function(summary) {
+  if (is.null(summary) || !is.data.frame(summary) || nrow(summary) < 1) {
+    return(NULL)
+  }
+  if (!use_wrapped_missing_table(summary)) {
+    return(shiny::div(
+      class = "oc-missing-table oc-missing-table-single",
+      missing_summary_table_ui(summary)
+    ))
+  }
+
+  chunks <- missing_summary_table_chunks(summary)
+  shiny::div(
+    class = "oc-missing-table-wrap",
+    lapply(chunks, function(chunk) {
+      shiny::div(
+        class = "oc-missing-table-chunk",
+        missing_summary_table_ui(chunk)
+      )
+    })
+  )
+}
+
+#' Inspect status summary UI
+#' @noRd
+inspect_status_ui <- function(occ) {
+  if (is.null(occ) || !is.data.frame(occ) || ncol(occ) < 1) {
+    return(NULL)
+  }
+  col_tags <- lapply(names(occ), function(name) {
+    shiny::tags$span(class = "oc-inspect-column-name", name)
+  })
+  shiny::div(
+    class = "oc-inspect-status",
+    shiny::tags$p(
+      shiny::tags$strong("Records: "),
+      nrow(occ)
+    ),
+    shiny::tags$p(
+      shiny::tags$strong("Columns: "),
+      ncol(occ)
+    ),
+    shiny::tags$div(
+      class = "oc-inspect-status-label",
+      shiny::tags$strong("Column names:")
+    ),
+    shiny::div(class = "oc-inspect-column-names", col_tags)
+  )
+}
+
 #' Horizontal bar chart of percent missing by column
 #'
 #' @param summary Output of [summarize_missing_columns()].

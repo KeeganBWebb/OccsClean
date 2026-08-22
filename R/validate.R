@@ -3,9 +3,15 @@
 #' Checks columns and parseability before Assess.
 #'
 #' @param occ Occurrence tibble with `occsclean_id`.
+#' @param column_map Optional manual column map.
+#' @param skipped_fields Optional character vector of skipped map keys.
+#' @param manually_mapped Whether columns were mapped manually.
 #' @return An object of class `occ_validation`.
 #' @export
-validate_occurrence_dataset <- function(occ) {
+validate_occurrence_dataset <- function(occ,
+                                        column_map = NULL,
+                                        skipped_fields = NULL,
+                                        manually_mapped = FALSE) {
   if (!is.data.frame(occ)) {
     rlang::abort("`occ` must be a data frame.", call = NULL)
   }
@@ -36,7 +42,15 @@ validate_occurrence_dataset <- function(occ) {
     }
   }
 
-  cols <- resolve_occurrence_columns(occ)
+  skipped_fields <- skipped_fields %||% character()
+
+  cols <- resolve_occurrence_columns(
+    occ,
+    overrides = column_map,
+    skipped = skipped_fields
+  )
+  field_keys <- c("lon", "lat", "date", "taxon", "basis_of_record", "country")
+  field_skipped <- field_keys %in% skipped_fields
   fields <- tibble::tibble(
     field = c(
       "longitude", "latitude", "occurrence_date", "scientific_name",
@@ -65,29 +79,78 @@ validate_occurrence_dataset <- function(occ) {
       !is.null(cols$taxon),
       !is.null(cols$basis_of_record),
       !is.null(cols$country)
+    ),
+    skipped = c(
+      field_skipped[[1]] || field_skipped[[2]],
+      field_skipped[[1]] || field_skipped[[2]],
+      field_skipped[[3]],
+      field_skipped[[4]],
+      field_skipped[[5]],
+      field_skipped[[6]]
     )
   )
 
+  coords_skipped <- "lon" %in% skipped_fields || "lat" %in% skipped_fields
   if (!isTRUE(fields$present[fields$field == "longitude"]) ||
         !isTRUE(fields$present[fields$field == "latitude"])) {
-    add_issue(
-      "warning",
-      "missing_coordinates_columns",
-      "Longitude and/or latitude columns were not found. Coordinate checks will be skipped."
-    )
+    if (coords_skipped) {
+      add_issue(
+        "warning",
+        "skipped_coordinates_columns",
+        "Coordinates were skipped. Coordinate and mapping checks will not run."
+      )
+    } else {
+      add_issue(
+        "warning",
+        "missing_coordinates_columns",
+        "Longitude and/or latitude columns were not found. Coordinate checks will be skipped."
+      )
+    }
   }
   if (!isTRUE(fields$present[fields$field == "occurrence_date"])) {
-    add_issue(
-      "warning",
-      "missing_date_column",
-      "An occurrence date column was not found. Temporal checks will be skipped."
-    )
+    if ("date" %in% skipped_fields) {
+      add_issue(
+        "warning",
+        "skipped_date_column",
+        "Occurrence date was skipped. Temporal checks will not run."
+      )
+    } else {
+      add_issue(
+        "warning",
+        "missing_date_column",
+        "An occurrence date column was not found. Temporal checks will be skipped."
+      )
+    }
   }
   if (!isTRUE(fields$present[fields$field == "scientific_name"])) {
+    if ("taxon" %in% skipped_fields) {
+      add_issue(
+        "warning",
+        "skipped_taxon_column",
+        "Scientific name was skipped. Allowed species checks will not run."
+      )
+    } else {
+      add_issue(
+        "warning",
+        "missing_taxon_column",
+        "A scientific name column was not found. Taxonomic checks (future) will be unavailable."
+      )
+    }
+  }
+  if (!isTRUE(fields$present[fields$field == "basis_of_record"]) &&
+        "basis_of_record" %in% skipped_fields) {
     add_issue(
       "warning",
-      "missing_taxon_column",
-      "A scientific name column was not found. Taxonomic checks (future) will be unavailable."
+      "skipped_basis_of_record_column",
+      "Basis of record was skipped. Basis of record checks will not run."
+    )
+  }
+  if (!isTRUE(fields$present[fields$field == "country"]) &&
+        "country" %in% skipped_fields) {
+    add_issue(
+      "warning",
+      "skipped_country_column",
+      "Country was skipped. Country mismatch checks will not run."
     )
   }
 
@@ -174,6 +237,8 @@ validate_occurrence_dataset <- function(occ) {
       parse_summary = parse_summary,
       issues = issues,
       column_map = cols,
+      skipped_fields = skipped_fields,
+      manually_mapped = isTRUE(manually_mapped),
       validated_at = Sys.time()
     ),
     class = "occ_validation"
@@ -214,7 +279,10 @@ format_validation_report <- function(validation) {
   lines <- c(
     "Dataset validation",
     "------------------",
-    paste0("Overall: ", format_validation_overall(validation$overall)),
+    paste0("Overall: ", format_validation_overall(
+      validation$overall,
+      validation$manually_mapped %||% FALSE
+    )),
     paste0("Validated: ", format(validation$validated_at, usetz = TRUE)),
     paste0("Rows: ", ps$n_rows, "  Columns: ", ps$n_cols),
     "",
@@ -224,7 +292,16 @@ format_validation_report <- function(validation) {
 
   for (i in seq_len(nrow(validation$fields))) {
     row <- validation$fields[i, , drop = FALSE]
-    if (isTRUE(row$present[[1]])) {
+    if (isTRUE(row$skipped[[1]])) {
+      lines <- c(
+        lines,
+        paste0(
+          "- ", row$field, ": skipped (",
+          column_map_field_skip_message(row$field),
+          ")"
+        )
+      )
+    } else if (isTRUE(row$present[[1]])) {
       lines <- c(
         lines,
         paste0("- ", row$field, ": found as \"", row$column_found, "\"")
@@ -288,11 +365,16 @@ format_validation_report <- function(validation) {
 }
 
 #' @noRd
-format_validation_overall <- function(overall) {
+format_validation_overall <- function(overall, manually_mapped = FALSE) {
+  suffix <- if (isTRUE(manually_mapped)) {
+    " - manually mapped"
+  } else {
+    ""
+  }
   switch(
     as.character(overall),
-    ready = "structure OK",
-    ready_with_warnings = "structure OK with warnings",
+    ready = paste0("structure OK", suffix),
+    ready_with_warnings = paste0("structure OK with warnings", suffix),
     failed = "structure check failed",
     as.character(overall)
   )

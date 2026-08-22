@@ -11,6 +11,8 @@ OccSession <- R6::R6Class(
       private$occ_raw_ <- NULL
       private$occ_working_ <- NULL
       private$column_map_ <- list()
+      private$column_map_override_ <- NULL
+      private$column_map_skipped_ <- character()
       private$validation_ <- NULL
       private$assessment_ <- list()
       private$decisions_ <- DecisionRegistry$new()
@@ -32,6 +34,8 @@ OccSession <- R6::R6Class(
       private$occ_raw_ <- imported$occ_raw
       private$occ_working_ <- copy_tibble(imported$occ_raw)
       private$column_map_ <- list()
+      private$column_map_override_ <- NULL
+      private$column_map_skipped_ <- character()
       private$validation_ <- validate_occurrence_dataset(private$occ_working_)
       private$column_map_ <- private$validation_$column_map
       private$assessment_ <- list()
@@ -73,8 +77,38 @@ OccSession <- R6::R6Class(
       if (is.null(private$occ_working_)) {
         rlang::abort("No occurrence data loaded.", call = NULL)
       }
-      private$validation_ <- validate_occurrence_dataset(private$occ_working_)
+      private$validation_ <- validate_occurrence_dataset(
+        private$occ_working_,
+        column_map = private$column_map_override_,
+        skipped_fields = private$column_map_skipped_,
+        manually_mapped = !is.null(private$column_map_override_)
+      )
       private$column_map_ <- private$validation_$column_map
+      private$column_map_skipped_ <- private$validation_$skipped_fields %||% character()
+      private$bump()
+      invisible(self)
+    },
+
+    #' @description Apply manual column mapping and re-run validation.
+    #' @param map Named list of column choices.
+    apply_column_mapping = function(map) {
+      if (is.null(private$occ_working_)) {
+        rlang::abort("No occurrence data loaded.", call = NULL)
+      }
+      normalized <- normalize_column_map_input(
+        map,
+        names(private$occ_working_)
+      )
+      private$column_map_override_ <- normalized$map
+      private$column_map_skipped_ <- normalized$skipped
+      private$validation_ <- validate_occurrence_dataset(
+        private$occ_working_,
+        column_map = normalized$map,
+        skipped_fields = normalized$skipped,
+        manually_mapped = TRUE
+      )
+      private$column_map_ <- private$validation_$column_map
+      private$column_map_skipped_ <- private$validation_$skipped_fields %||% character()
       private$bump()
       invisible(self)
     },
@@ -82,6 +116,11 @@ OccSession <- R6::R6Class(
     #' @description Column map from validation.
     get_column_map = function() {
       private$column_map_
+    },
+
+    #' @description Skipped column map keys from manual mapping.
+    get_skipped_fields = function() {
+      private$column_map_skipped_
     },
 
     #' @description Decision registry.
@@ -141,6 +180,8 @@ OccSession <- R6::R6Class(
       if (is.null(private$occ_working_)) {
         rlang::abort("No occurrence data loaded.", call = NULL)
       }
+      col_params <- check_params_from_column_map(private$column_map_)
+      params <- merge_check_column_params(params, col_params)
       results <- run_quality_checks(
         occ = private$occ_working_,
         check_ids = check_ids,
@@ -155,7 +196,8 @@ OccSession <- R6::R6Class(
     get_findings_table = function() {
       assessment_findings_table(
         assessment = private$assessment_,
-        occ = private$occ_working_
+        occ = private$occ_working_,
+        column_map = private$column_map_
       )
     },
 
@@ -215,6 +257,8 @@ OccSession <- R6::R6Class(
     occ_raw_ = NULL,
     occ_working_ = NULL,
     column_map_ = NULL,
+    column_map_override_ = NULL,
+    column_map_skipped_ = NULL,
     validation_ = NULL,
     assessment_ = NULL,
     decisions_ = NULL,

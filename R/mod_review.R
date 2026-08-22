@@ -3,7 +3,49 @@
 #' @noRd
 mod_review_ui <- function(id) {
   ns <- shiny::NS(id)
+  check_filter_input <- function(input_id) {
+    shiny::div(
+      class = "oc-review-check-filter",
+      shiny::selectizeInput(
+        ns(input_id),
+        paste0(
+          "Filter to records with multiple check flags. ",
+          "Resulting records must have all checks selected."
+        ),
+        choices = NULL,
+        selected = NULL,
+        multiple = TRUE,
+        options = list(placeholder = "All checks")
+      )
+    )
+  }
   shiny::tagList(
+    shiny::tags$style(shiny::HTML(
+      ".oc-review-check-filter .selectize-control.multi .item .remove {",
+      "  display: none !important;",
+      "}",
+      ".oc-review-check-filter .selectize-control.multi .selectize-input .item {",
+      "  cursor: pointer;",
+      "}"
+    )),
+    shiny::tags$script(shiny::HTML(
+      "$(document).on(",
+      "  'mousedown',",
+      "  '.oc-review-check-filter .selectize-input .item',",
+      "  function(e) {",
+      "    e.preventDefault();",
+      "    e.stopImmediatePropagation();",
+      "    var value = $(this).attr('data-value');",
+      "    var selectEl = $(this)",
+      "      .closest('.shiny-input-container')",
+      "      .find('select.selectized')[0];",
+      "    if (selectEl && selectEl.selectize && value) {",
+      "      selectEl.selectize.removeItem(value, false);",
+      "    }",
+      "    return false;",
+      "  }",
+      ");"
+    )),
     shiny::h3("Review Flags"),
     shiny::uiOutput(ns("warning")),
     shiny::p(
@@ -62,6 +104,7 @@ mod_review_ui <- function(id) {
           )
         ),
         shiny::br(),
+        check_filter_input("checks_filter_review"),
         DT::DTOutput(ns("tbl_in_review"))
       ),
       shiny::tabPanel(
@@ -100,6 +143,7 @@ mod_review_ui <- function(id) {
           )
         ),
         shiny::br(),
+        check_filter_input("checks_filter_keep"),
         DT::DTOutput(ns("tbl_keep"))
       ),
       shiny::tabPanel(
@@ -138,9 +182,55 @@ mod_review_ui <- function(id) {
           )
         ),
         shiny::br(),
+        check_filter_input("checks_filter_delete"),
         DT::DTOutput(ns("tbl_delete"))
       )
     )
+  )
+}
+
+dt_select_column_filter_js <- function(
+    column_idx,
+    labels,
+    empty_label,
+    blank_option = FALSE) {
+  labels <- as.character(labels)
+  labels_json <- jsonlite::toJSON(labels, auto_unbox = FALSE)
+  blank_js <- if (isTRUE(blank_option)) {
+    paste0(
+      "      if (val === '(blank)') {",
+      "        api.column(idx).search('^$', true, true).draw();",
+      "        return;",
+      "      }"
+    )
+  } else {
+    ""
+  }
+  paste0(
+    "  {",
+    "    var idx = ", column_idx, ";",
+    "    var labels = ", labels_json, ";",
+    "    var $cell = $(api.table().container()).find('thead tr:eq(1) td').eq(idx);",
+    "    var $input = $cell.find('input, select');",
+    "    if ($input.length === 0) { return; }",
+    "    var $select = $('<select class=\"form-control form-control-sm\">",
+    "<option value=\"\">", empty_label, "</option></select>');",
+    "    labels.forEach(function(lab) {",
+    "      $select.append($('<option></option>').attr('value', lab).text(lab));",
+    "    });",
+    "    $input.replaceWith($select);",
+    "    $select.on('change', function() {",
+    "      var val = $(this).val();",
+    "      if (!val) {",
+    "        api.column(idx).search('', true, false).draw();",
+    "        return;",
+    "      }",
+    blank_js,
+    "      api.column(idx).search(",
+    "        $.fn.dataTable.util.escapeRegex(val), true, false",
+    "      ).draw();",
+    "    });",
+    "  }"
   )
 }
 
@@ -226,7 +316,7 @@ mod_review_server <- function(id, app_state) {
       invisible(app_state$rev)
       s <- app_state$session
       if (!s$has_data()) {
-        return(workflow_warning_ui("Review"))
+        return(workflow_warning_ui())
       }
       if (length(s$get_assessment()) < 1) {
         return(shiny::div(
@@ -263,6 +353,25 @@ mod_review_server <- function(id, app_state) {
     passed <- shiny::reactive(subset_status("pass"))
     failed <- shiny::reactive(subset_status("fail"))
 
+    filtered_in_review <- shiny::reactive({
+      filter_review_occurrences_by_checks(
+        in_review(),
+        input$checks_filter_review
+      )
+    })
+    filtered_passed <- shiny::reactive({
+      filter_review_occurrences_by_checks(
+        passed(),
+        input$checks_filter_keep
+      )
+    })
+    filtered_failed <- shiny::reactive({
+      filter_review_occurrences_by_checks(
+        failed(),
+        input$checks_filter_delete
+      )
+    })
+
     update_finding_choices <- function(input_id, occ_df) {
       if (is.null(occ_df) || nrow(occ_df) < 1) {
         shiny::updateSelectInput(
@@ -285,17 +394,57 @@ mod_review_server <- function(id, app_state) {
       )
     }
 
+    update_check_filter_choices <- function(input_id, occ_df) {
+      choices <- review_check_filter_choices(occ_df, raw_findings())
+      cache_key <- paste0("oc_check_filter_", input_id)
+      choice_sig <- paste(
+        names(choices),
+        unlist(choices, use.names = FALSE),
+        sep = "\t",
+        collapse = "\n"
+      )
+      if (identical(choice_sig, session$userData[[cache_key]])) {
+        return(invisible(NULL))
+      }
+      session$userData[[cache_key]] <- choice_sig
+
+      current <- shiny::isolate(input[[input_id]] %||% character())
+      valid <- unlist(choices, use.names = FALSE)
+      if (length(valid) > 0) {
+        pruned <- intersect(current, valid)
+      } else {
+        pruned <- character()
+      }
+      if (!identical(sort(current), sort(pruned))) {
+        shiny::updateSelectizeInput(
+          session,
+          input_id,
+          choices = choices,
+          selected = pruned
+        )
+      } else {
+        shiny::updateSelectizeInput(
+          session,
+          input_id,
+          choices = choices
+        )
+      }
+    }
+
     shiny::observe({
       df <- tryCatch(in_review(), error = function(e) NULL)
       update_finding_choices("finding_type", df)
+      update_check_filter_choices("checks_filter_review", df)
     })
     shiny::observe({
       df <- tryCatch(passed(), error = function(e) NULL)
       update_finding_choices("finding_type_keep", df)
+      update_check_filter_choices("checks_filter_keep", df)
     })
     shiny::observe({
       df <- tryCatch(failed(), error = function(e) NULL)
       update_finding_choices("finding_type_delete", df)
+      update_check_filter_choices("checks_filter_delete", df)
     })
 
     output$status <- shiny::renderText({
@@ -321,35 +470,70 @@ mod_review_server <- function(id, app_state) {
       )
     })
 
-    render_occ_dt <- function(df) {
+    render_occ_dt <- function(df, choice_df, findings) {
       show <- df
-      if ("occsclean_id" %in% names(show)) {
-        show$occsclean_id <- NULL
+      drop_cols <- c("occsclean_id", "review_status", "check_ids")
+      for (col in drop_cols) {
+        if (col %in% names(show)) {
+          show[[col]] <- NULL
+        }
       }
-      if ("review_status" %in% names(show)) {
-        show$review_status <- NULL
+      checks_idx <- which(names(show) == "checks") - 1L
+      name_idx <- which(names(show) == "scientificName") - 1L
+      check_labels <- names(review_check_filter_choices(choice_df, findings))
+      name_choices <- review_column_filter_choices(choice_df, "scientificName")
+      filter_js <- character()
+      if (length(checks_idx) == 1L && checks_idx >= 0L) {
+        filter_js <- c(
+          filter_js,
+          dt_select_column_filter_js(checks_idx, check_labels, "Any check")
+        )
       }
+      if (length(name_idx) == 1L && name_idx >= 0L && length(name_choices) > 0L) {
+        filter_js <- c(
+          filter_js,
+          dt_select_column_filter_js(
+            name_idx,
+            name_choices,
+            "Any name",
+            blank_option = TRUE
+          )
+        )
+      }
+      init_js <- if (length(filter_js) > 0L) {
+        DT::JS(paste0(
+          "function() {",
+          "  var api = this.api();",
+          paste(filter_js, collapse = ""),
+          "}"
+        ))
+      } else {
+        NULL
+      }
+      opts <- list(
+        pageLength = 25,
+        scrollX = TRUE,
+        autoWidth = TRUE,
+        dom = "lrtip",
+        initComplete = init_js
+      )
       DT::datatable(
         show,
         selection = "multiple",
         rownames = FALSE,
         filter = "top",
-        options = list(
-          pageLength = 25,
-          scrollX = TRUE,
-          autoWidth = TRUE
-        )
+        options = opts
       )
     }
 
     output$tbl_in_review <- DT::renderDT({
-      render_occ_dt(in_review())
+      render_occ_dt(filtered_in_review(), in_review(), raw_findings())
     })
     output$tbl_keep <- DT::renderDT({
-      render_occ_dt(passed())
+      render_occ_dt(filtered_passed(), passed(), raw_findings())
     })
     output$tbl_delete <- DT::renderDT({
-      render_occ_dt(failed())
+      render_occ_dt(filtered_failed(), failed(), raw_findings())
     })
 
     selected_occsclean_ids <- function(occ_df, selected_rows) {
@@ -418,11 +602,17 @@ mod_review_server <- function(id, app_state) {
     }
 
     shiny::observeEvent(input$mark_delete, {
-      ids <- selected_occsclean_ids(in_review(), input$tbl_in_review_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_in_review(),
+        input$tbl_in_review_rows_selected
+      )
       apply_occurrence_action(ids, "fail")
     })
     shiny::observeEvent(input$mark_keep, {
-      ids <- selected_occsclean_ids(in_review(), input$tbl_in_review_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_in_review(),
+        input$tbl_in_review_rows_selected
+      )
       apply_occurrence_action(ids, "pass")
     })
     shiny::observeEvent(input$delete_by_type, {
@@ -562,19 +752,31 @@ mod_review_server <- function(id, app_state) {
       apply_occurrence_action(as.character(rows$occsclean_id), "fail")
     })
     shiny::observeEvent(input$keep_to_delete, {
-      ids <- selected_occsclean_ids(passed(), input$tbl_keep_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_passed(),
+        input$tbl_keep_rows_selected
+      )
       apply_occurrence_action(ids, "fail")
     })
     shiny::observeEvent(input$keep_to_review, {
-      ids <- selected_occsclean_ids(passed(), input$tbl_keep_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_passed(),
+        input$tbl_keep_rows_selected
+      )
       apply_occurrence_action(ids, "review")
     })
     shiny::observeEvent(input$delete_to_keep, {
-      ids <- selected_occsclean_ids(failed(), input$tbl_delete_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_failed(),
+        input$tbl_delete_rows_selected
+      )
       apply_occurrence_action(ids, "pass")
     })
     shiny::observeEvent(input$delete_to_review, {
-      ids <- selected_occsclean_ids(failed(), input$tbl_delete_rows_selected)
+      ids <- selected_occsclean_ids(
+        filtered_failed(),
+        input$tbl_delete_rows_selected
+      )
       apply_occurrence_action(ids, "review")
     })
   })

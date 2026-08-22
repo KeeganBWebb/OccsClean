@@ -169,6 +169,73 @@ assess_help_css <- function() {
       cursor: pointer;
       margin-bottom: 0.5rem;
     }
+    .oc-assess-groups {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(18rem, 1fr));
+      gap: 0.75rem 1.5rem;
+      margin-bottom: 1rem;
+      align-items: start;
+    }
+    .oc-assess-group-block {
+      min-width: 0;
+    }
+    .oc-assess-group-block > h4 {
+      margin-top: 0;
+      margin-bottom: 0.5rem;
+    }
+    .oc-assess-checks .shiny-options-group,
+    .oc-assess-checks .shiny-input-checkboxgroup {
+      margin-bottom: 0;
+    }
+    .oc-assess-checks .form-group {
+      display: block;
+      margin-bottom: 0;
+    }
+    .oc-assess-checks .form-group > .shiny-input-checkboxgroup,
+    .oc-assess-checks .form-group > .shiny-input-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      gap: 0.2rem 1rem;
+      align-items: start;
+    }
+    .oc-assess-checks .shiny-options-group {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+      gap: 0.2rem 1rem;
+      align-items: start;
+    }
+    .oc-assess-checks .checkbox,
+    .oc-assess-checks .form-check {
+      margin-top: 0.15rem;
+      margin-bottom: 0.15rem;
+    }
+    .oc-assess-settings {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr));
+      gap: 1rem 1.5rem;
+      align-items: start;
+      margin-bottom: 0.5rem;
+    }
+    .oc-assess-settings-panel {
+      min-width: 0;
+    }
+    .oc-assess-settings-wide {
+      grid-column: 1 / -1;
+    }
+    .oc-assess-settings-panel h4 {
+      margin-top: 0;
+    }
+    .oc-assess-buffer-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+      gap: 0.35rem 1rem;
+    }
+    .oc-assess-settings .selectize-control {
+      width: 100%;
+    }
+    .oc-assess-settings .selectize-dropdown {
+      max-height: 16rem;
+    }
   "))
 }
 
@@ -193,28 +260,45 @@ assess_group_ui <- function(ns, catalog, group_id, input_id, open = TRUE) {
     )
   })
 
-  body <- shiny::checkboxGroupInput(
-    ns(input_id),
-    label = NULL,
-    choiceNames = choice_names,
-    choiceValues = as.list(rows$check_id),
-    selected = selected
+  body <- shiny::div(
+    class = "oc-assess-checks",
+    shiny::checkboxGroupInput(
+      ns(input_id),
+      label = NULL,
+      choiceNames = choice_names,
+      choiceValues = as.list(rows$check_id),
+      selected = selected
+    )
   )
 
   if (isTRUE(open)) {
-    shiny::tagList(
+    shiny::div(
+      class = "oc-assess-group-block",
       shiny::h4(group_label),
       body
     )
   } else {
-    shiny::tags$details(
-      class = "oc-assess-group",
-      shiny::tags$summary(shiny::tags$strong(group_label)),
-      body
+    shiny::div(
+      class = "oc-assess-group-block",
+      shiny::tags$details(
+        class = "oc-assess-group",
+        shiny::tags$summary(shiny::tags$strong(group_label)),
+        body
+      )
     )
   }
 }
 
+
+#' Wrapped settings panel for Assess grid layout
+#' @noRd
+assess_settings_panel <- function(..., wide = FALSE) {
+  cls <- "oc-assess-settings-panel"
+  if (isTRUE(wide)) {
+    cls <- paste(cls, "oc-assess-settings-wide")
+  }
+  shiny::div(class = cls, ...)
+}
 
 #' Assess step UI
 #' @param id Module id.
@@ -230,15 +314,18 @@ mod_assess_ui <- function(id) {
     shiny::p(
       "Choose which cleaning checks to run. Hover over ? next to each check for help tips."
     ),
-    assess_group_ui(ns, catalog, "basics", "checks_basics", open = TRUE),
-    assess_group_ui(ns, catalog, "dates", "checks_dates", open = FALSE),
-    assess_group_ui(
-      ns, catalog, "suspicious_locations", "checks_locations",
-      open = FALSE
-    ),
-    assess_group_ui(
-      ns, catalog, "taxonomic", "checks_taxonomic",
-      open = FALSE
+    shiny::div(
+      class = "oc-assess-groups",
+      assess_group_ui(ns, catalog, "basics", "checks_basics", open = TRUE),
+      assess_group_ui(ns, catalog, "dates", "checks_dates", open = FALSE),
+      assess_group_ui(
+        ns, catalog, "suspicious_locations", "checks_locations",
+        open = FALSE
+      ),
+      assess_group_ui(
+        ns, catalog, "taxonomic", "checks_taxonomic",
+        open = FALSE
+      )
     ),
     shiny::uiOutput(ns("check_settings")),
     shiny::br(),
@@ -275,7 +362,7 @@ mod_assess_server <- function(id, app_state) {
       if (isTRUE(app_state$session$has_data())) {
         return(NULL)
       }
-      workflow_warning_ui("Assess")
+      workflow_warning_ui()
     })
 
     pending_filters <- shiny::reactiveVal(NULL)
@@ -312,8 +399,8 @@ mod_assess_server <- function(id, app_state) {
       }
 
       if ("date_out_of_range" %in% selected) {
-        panels[[length(panels) + 1L]] <- shiny::tagList(
-          shiny::hr(),
+        panels[[length(panels) + 1L]] <- assess_settings_panel(
+          wide = TRUE,
           shiny::h4("Date range"),
           shiny::p('Required for "Dates outside range". Use YYYY-MM-DD.'),
           shiny::fluidRow(
@@ -343,7 +430,11 @@ mod_assess_server <- function(id, app_state) {
         s <- app_state$session
         choices <- character()
         if (isTRUE(s$has_data())) {
-          choices <- basis_of_record_values_in_data(s$get_occ_working())
+          cm <- s$get_column_map()
+          choices <- basis_of_record_values_in_data(
+            s$get_occ_working(),
+            basis_col = cm$basis_of_record
+          )
         }
         current <- pick_multi(
           "allowed_basis",
@@ -352,8 +443,7 @@ mod_assess_server <- function(id, app_state) {
         )
 
         if (length(choices) < 1) {
-          panels[[length(panels) + 1L]] <- shiny::tagList(
-            shiny::hr(),
+          panels[[length(panels) + 1L]] <- assess_settings_panel(
             shiny::h4("Basis of record"),
             shiny::p(
               "No non-blank basisOfRecord values were found in the uploaded file.",
@@ -361,8 +451,7 @@ mod_assess_server <- function(id, app_state) {
             )
           )
         } else {
-          panels[[length(panels) + 1L]] <- shiny::tagList(
-            shiny::hr(),
+          panels[[length(panels) + 1L]] <- assess_settings_panel(
             shiny::h4("Basis of record"),
             shiny::p(
               'Required for "Basis Of Record". Options are the unique values',
@@ -385,7 +474,11 @@ mod_assess_server <- function(id, app_state) {
         s <- app_state$session
         choices <- character()
         if (isTRUE(s$has_data())) {
-          choices <- scientific_name_values_in_data(s$get_occ_working())
+          cm <- s$get_column_map()
+          choices <- scientific_name_values_in_data(
+            s$get_occ_working(),
+            taxon_col = cm$taxon
+          )
         }
         current <- pick_multi(
           "allowed_species",
@@ -394,8 +487,7 @@ mod_assess_server <- function(id, app_state) {
         )
 
         if (length(choices) < 1) {
-          panels[[length(panels) + 1L]] <- shiny::tagList(
-            shiny::hr(),
+          panels[[length(panels) + 1L]] <- assess_settings_panel(
             shiny::h4("Allowed species"),
             shiny::p(
               "No non-blank scientific names were found in the uploaded file.",
@@ -403,8 +495,7 @@ mod_assess_server <- function(id, app_state) {
             )
           )
         } else {
-          panels[[length(panels) + 1L]] <- shiny::tagList(
-            shiny::hr(),
+          panels[[length(panels) + 1L]] <- assess_settings_panel(
             shiny::h4("Allowed species"),
             shiny::p(
               'Required for "Allowed species". Options are the unique scientific',
@@ -434,8 +525,8 @@ mod_assess_server <- function(id, app_state) {
             )
           )
         }
-        panels[[length(panels) + 1L]] <- shiny::tagList(
-          shiny::hr(),
+        panels[[length(panels) + 1L]] <- assess_settings_panel(
+          wide = TRUE,
           shiny::h4("Study area / range"),
           shiny::p(
             'Required for "Outside study area". Upload a polygon shapefile',
@@ -476,18 +567,9 @@ mod_assess_server <- function(id, app_state) {
         selected
       )
       if (length(buffer_checks) > 0 || "coord_country" %in% selected) {
-        buffer_inputs <- list(
-          shiny::hr(),
-          shiny::h4("Location buffers"),
-          shiny::p(
-            "Distance thresholds in meters for selected location checks.",
-            "Blank fields use the defaults shown in parentheses.",
-            "Make sure to decide these distances based on the range of your",
-            "study species."
-          )
-        )
+        buffer_fields <- list()
         if ("coord_capital" %in% selected) {
-          buffer_inputs[[length(buffer_inputs) + 1L]] <- shiny::textInput(
+          buffer_fields[[length(buffer_fields) + 1L]] <- shiny::textInput(
             session$ns("buffer_capital_m"),
             paste0(
               "Near a capital city buffer (m) (default: ",
@@ -501,7 +583,7 @@ mod_assess_server <- function(id, app_state) {
           )
         }
         if ("coord_centroid" %in% selected) {
-          buffer_inputs[[length(buffer_inputs) + 1L]] <- shiny::textInput(
+          buffer_fields[[length(buffer_fields) + 1L]] <- shiny::textInput(
             session$ns("buffer_centroid_m"),
             paste0(
               "Near country or province center buffer (m) (default: ",
@@ -515,7 +597,7 @@ mod_assess_server <- function(id, app_state) {
           )
         }
         if ("coord_institution" %in% selected) {
-          buffer_inputs[[length(buffer_inputs) + 1L]] <- shiny::textInput(
+          buffer_fields[[length(buffer_fields) + 1L]] <- shiny::textInput(
             session$ns("buffer_institution_m"),
             paste0(
               "Near a museum or collection buffer (m) (default: ",
@@ -529,7 +611,7 @@ mod_assess_server <- function(id, app_state) {
           )
         }
         if ("coord_gbif" %in% selected) {
-          buffer_inputs[[length(buffer_inputs) + 1L]] <- shiny::textInput(
+          buffer_fields[[length(buffer_fields) + 1L]] <- shiny::textInput(
             session$ns("buffer_gbif_m"),
             paste0(
               "Near GBIF headquarters buffer (m) (default: ",
@@ -543,7 +625,7 @@ mod_assess_server <- function(id, app_state) {
           )
         }
         if ("coord_country" %in% selected) {
-          buffer_inputs[[length(buffer_inputs) + 1L]] <- shiny::textInput(
+          buffer_fields[[length(buffer_fields) + 1L]] <- shiny::textInput(
             session$ns("buffer_country_m"),
             "Outside reported country buffer (m) (default: none)",
             value = pick_text(
@@ -553,13 +635,26 @@ mod_assess_server <- function(id, app_state) {
             placeholder = "Leave blank for no buffer"
           )
         }
-        panels[[length(panels) + 1L]] <- do.call(shiny::tagList, buffer_inputs)
+        panels[[length(panels) + 1L]] <- assess_settings_panel(
+          wide = TRUE,
+          shiny::h4("Location buffers"),
+          shiny::p(
+            "Distance thresholds in meters for selected location checks.",
+            "Blank fields use the defaults shown in parentheses.",
+            "Make sure to decide these distances based on the range of your",
+            "study species."
+          ),
+          shiny::div(
+            class = "oc-assess-buffer-grid",
+            do.call(shiny::tagList, buffer_fields)
+          )
+        )
       }
 
       if (length(panels) < 1) {
         return(NULL)
       }
-      do.call(shiny::tagList, panels)
+      do.call(shiny::div, c(list(class = "oc-assess-settings"), panels))
     })
 
     shiny::observeEvent(input$settings_file, {

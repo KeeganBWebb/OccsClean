@@ -7,7 +7,7 @@ build_review_occurrences <- function(findings, decisions) {
     occsclean_id = character(),
     review_status = character(),
     n_flags = integer(),
-    findings = character(),
+    check_ids = character(),
     checks = character(),
     scientificName = character(),
     decimalLongitude = character(),
@@ -50,6 +50,8 @@ build_review_occurrences <- function(findings, decisions) {
   }
   joined$check_display <- as.character(joined[[check_col]])
   joined$check_display[is.na(joined$check_display)] <- ""
+  joined$check_id <- as.character(joined$check_id)
+  joined$check_id[is.na(joined$check_id)] <- ""
 
   for (col in c(
     "scientificName", "decimalLongitude", "decimalLatitude",
@@ -80,7 +82,10 @@ build_review_occurrences <- function(findings, decisions) {
       }
     },
     n_flags = dplyr::n(),
-    findings = paste(unique(.data$finding[nzchar(.data$finding)]), collapse = "; "),
+    check_ids = paste(
+      sort(unique(.data$check_id[nzchar(.data$check_id)])),
+      collapse = ","
+    ),
     checks = paste(
       unique(.data$check_display[nzchar(.data$check_display)]),
       collapse = "; "
@@ -109,10 +114,10 @@ prepare_review_occurrence_table <- function(findings, decisions) {
     return(out)
   }
 
-  # Factor columns for DT dropdown filters (not numeric sliders).
   factor_cols <- c(
-    "review_status", "n_flags", "findings", "checks", "scientificName",
-    "basisOfRecord"
+    "review_status", "n_flags", "basisOfRecord"
+  )
+    "review_status", "n_flags", "basisOfRecord"
   )
   for (col in intersect(factor_cols, names(out))) {
     vals <- as.character(out[[col]])
@@ -128,6 +133,81 @@ prepare_review_occurrence_table <- function(findings, decisions) {
     }
   }
   out
+}
+
+#' Distinct column values for occurrence review table filters
+#' @noRd
+review_column_filter_choices <- function(occ_df, column) {
+  if (is.null(occ_df) || nrow(occ_df) < 1 || !column %in% names(occ_df)) {
+    return(character())
+  }
+  vals <- as.character(occ_df[[column]])
+  vals[is.na(vals) | !nzchar(vals)] <- "(blank)"
+  sort(unique(vals))
+}
+
+#' Check filter choices for occurrence review tables
+#' @noRd
+review_check_filter_choices <- function(occ_df, findings) {
+  if (is.null(occ_df) || nrow(occ_df) < 1 ||
+        is.null(findings) || nrow(findings) < 1) {
+    return(list())
+  }
+  hit <- findings[
+    as.character(findings$occsclean_id) %in% as.character(occ_df$occsclean_id),
+    ,
+    drop = FALSE
+  ]
+  if (!("check_id" %in% names(hit))) {
+    return(list())
+  }
+  hit <- hit[
+    as.character(hit$check_id) != map_review_check_id(),
+    ,
+    drop = FALSE
+  ]
+  ids <- sort(unique(as.character(hit$check_id)))
+  ids <- ids[nzchar(ids)]
+  if (length(ids) < 1) {
+    return(list())
+  }
+  label_col <- if ("check_label" %in% names(hit)) {
+    "check_label"
+  } else if ("check" %in% names(hit)) {
+    "check"
+  } else {
+    NULL
+  }
+  labels <- vapply(ids, function(id) {
+    rows <- hit[as.character(hit$check_id) == id, , drop = FALSE]
+    if (!is.null(label_col)) {
+      val <- as.character(rows[[label_col]][[1]])
+      if (!is.na(val) && nzchar(val)) {
+        return(val)
+      }
+    }
+    id
+  }, character(1))
+  stats::setNames(as.list(ids), labels)
+}
+
+#' Keep occurrences flagged by all selected checks
+#' @noRd
+filter_review_occurrences_by_checks <- function(occ_df, selected_check_ids) {
+  selected <- unique(as.character(selected_check_ids))
+  selected <- selected[nzchar(selected)]
+  if (length(selected) < 1) {
+    return(occ_df)
+  }
+  if (is.null(occ_df) || nrow(occ_df) < 1 || !"check_ids" %in% names(occ_df)) {
+    return(occ_df)
+  }
+  keep <- vapply(
+    strsplit(as.character(occ_df$check_ids), ",", fixed = TRUE),
+    function(ids) all(selected %in% ids),
+    logical(1)
+  )
+  occ_df[keep, , drop = FALSE]
 }
 
 #' Finding codes present on a set of occurrence ids

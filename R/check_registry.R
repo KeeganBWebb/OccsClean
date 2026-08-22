@@ -35,7 +35,7 @@ quality_check_definitions <- function() {
       label = "Duplicate records",
       category = "occurrence",
       ui_group = "basics",
-      ui_group_label = "Basic checks",
+      ui_group_label = "General checks",
       description = "Flags rows that match on every field except OccsClean's internal row key.",
       fun = check_duplicates
     ),
@@ -44,7 +44,7 @@ quality_check_definitions <- function() {
       label = "Missing coordinates",
       category = "coordinate",
       ui_group = "basics",
-      ui_group_label = "Basic checks",
+      ui_group_label = "General checks",
       description = "Longitude and/or latitude is blank.",
       fun = check_missing_coordinates
     ),
@@ -53,7 +53,7 @@ quality_check_definitions <- function() {
       label = "Invalid coordinates",
       category = "coordinate",
       ui_group = "basics",
-      ui_group_label = "Basic checks",
+      ui_group_label = "General checks",
       description = "Non-numeric or outside lon [-180, 180] / lat [-90, 90].",
       fun = check_invalid_coordinates
     ),
@@ -62,7 +62,7 @@ quality_check_definitions <- function() {
       label = "Basis Of Record",
       category = "occurrence",
       ui_group = "basics",
-      ui_group_label = "Basic checks",
+      ui_group_label = "General checks",
       description = paste(
         "Flag records with blank or unwanted basisOfRecord values based on the",
         "selected filters. Useful for ensuring the remaining data has been",
@@ -326,8 +326,9 @@ run_quality_checks <- function(occ,
 #'
 #' @param assessment Named list of [occ_check_result] objects.
 #' @param occ Optional occurrence tibble to join context columns.
+#' @param column_map Optional resolved column map.
 #' @export
-assessment_findings_table <- function(assessment, occ = NULL) {
+assessment_findings_table <- function(assessment, occ = NULL, column_map = NULL) {
   if (length(assessment) < 1) {
     return(tibble::tibble(
       check_id = character(),
@@ -373,7 +374,11 @@ assessment_findings_table <- function(assessment, occ = NULL) {
   }
 
   if (!is.null(occ) && "occsclean_id" %in% names(occ)) {
-    cols <- resolve_occurrence_columns(occ)
+    cols <- if (is.list(column_map) && length(column_map) > 0) {
+      column_map
+    } else {
+      resolve_occurrence_columns(occ)
+    }
     keep <- c(
       "occsclean_id",
       intersect(c("scientificName", "acceptedScientificName"), names(occ)),
