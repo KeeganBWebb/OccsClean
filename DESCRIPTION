@@ -1,6 +1,6 @@
 Package: OccsClean
 Title: Biodiversity Occurrence Data Quality Assessment
-Version: 0.1.0
+Version: 0.2.0
 Authors@R: 
     person("Keegan B.", "Webb", email = "KeeganBWebb@gmail.com",
            role = c("aut", "cre"))

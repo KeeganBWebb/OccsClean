@@ -46,7 +46,7 @@ mod_visualize_server <- function(id, app_state) {
       invisible(app_state$rev)
       s <- app_state$session
       if (!s$has_data()) {
-        return(workflow_warning_ui("Visualize"))
+        return(workflow_warning_ui())
       }
       if (length(s$get_assessment()) < 1) {
         return(shiny::div(

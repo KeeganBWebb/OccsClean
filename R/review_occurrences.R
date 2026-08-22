@@ -117,8 +117,6 @@ prepare_review_occurrence_table <- function(findings, decisions) {
   factor_cols <- c(
     "review_status", "n_flags", "basisOfRecord"
   )
-    "review_status", "n_flags", "basisOfRecord"
-  )
   for (col in intersect(factor_cols, names(out))) {
     vals <- as.character(out[[col]])
     vals[is.na(vals) | !nzchar(vals)] <- "(blank)"

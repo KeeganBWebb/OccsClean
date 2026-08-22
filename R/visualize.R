@@ -17,13 +17,21 @@ empty_visualize_points <- function() {
 #' @param occ Occurrence tibble with `occsclean_id`.
 #' @param findings Optional findings tibble.
 #' @param decisions Optional [DecisionRegistry].
+#' @param column_map Optional resolved column map.
 #' @noRd
-build_visualize_records <- function(occ, findings = NULL, decisions = NULL) {
+build_visualize_records <- function(occ,
+                                    findings = NULL,
+                                    decisions = NULL,
+                                    column_map = NULL) {
   if (is.null(occ) || !is.data.frame(occ) || nrow(occ) < 1) {
     return(empty_visualize_points())
   }
 
-  cols <- resolve_occurrence_columns(occ)
+  cols <- if (is.list(column_map) && length(column_map) > 0) {
+    column_map
+  } else {
+    resolve_occurrence_columns(occ)
+  }
   n <- nrow(occ)
   lon <- rep(NA_real_, n)
   lat <- rep(NA_real_, n)

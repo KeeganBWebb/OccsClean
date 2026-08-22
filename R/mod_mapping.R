@@ -111,7 +111,7 @@ mod_mapping_server <- function(id, app_state) {
       if (isTRUE(app_state$session$has_data())) {
         return(NULL)
       }
-      workflow_warning_ui("Mapping")
+      workflow_warning_ui()
     })
 
     map_records <- shiny::reactive({
@@ -127,7 +127,8 @@ mod_mapping_server <- function(id, app_state) {
       build_visualize_records(
         occ = s$get_occ_working(),
         findings = findings,
-        decisions = s$get_decisions()
+        decisions = s$get_decisions(),
+        column_map = s$get_column_map()
       )
     })
 

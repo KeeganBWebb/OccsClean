@@ -34,7 +34,7 @@ mod_export_server <- function(id, app_state) {
       if (isTRUE(app_state$session$has_data())) {
         return(NULL)
       }
-      workflow_warning_ui("Export")
+      workflow_warning_ui()
     })
 
     output$status <- shiny::renderText({
