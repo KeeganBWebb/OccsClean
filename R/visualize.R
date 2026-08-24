@@ -134,8 +134,57 @@ build_visualize_records <- function(occ,
     if (length(removed) > 0) {
       rec$map_status[rec$occsclean_id %in% as.character(removed)] <- "Failed"
     }
+
+    rec <- apply_manual_review_map_status(rec, decisions)
   }
 
+  rec
+}
+
+#' Apply manual review flag status to visualize records
+#' @noRd
+apply_manual_review_map_status <- function(rec, decisions) {
+  if (is.null(rec) || nrow(rec) < 1) {
+    return(rec)
+  }
+  eff <- decisions$effective()
+  if (nrow(eff) < 1) {
+    return(rec)
+  }
+  manual_eff <- eff[
+    as.character(eff$check_id) == manual_review_check_id() &
+      as.character(eff$finding) == manual_review_finding(),
+    ,
+    drop = FALSE
+  ]
+  if (nrow(manual_eff) < 1) {
+    return(rec)
+  }
+  label <- manual_review_check_label()
+  for (id in unique(as.character(manual_eff$occsclean_id))) {
+    hit <- manual_eff[
+      as.character(manual_eff$occsclean_id) == id,
+      ,
+      drop = FALSE
+    ]
+    action <- as.character(hit$action[[1]])
+    idx <- rec$occsclean_id == id
+    if (!any(idx)) {
+      next
+    }
+    if (identical(action, "unreviewed")) {
+      rec$map_status[idx] <- "Flagged"
+    }
+    if (action %in% c("unreviewed", "remove")) {
+      rec$n_flags[idx] <- pmax(as.integer(rec$n_flags[idx]), 1L)
+      existing <- as.character(rec$flag_labels[idx])
+      if (!nzchar(existing)) {
+        rec$flag_labels[idx] <- label
+      } else if (!grepl(label, existing, fixed = TRUE)) {
+        rec$flag_labels[idx] <- paste(existing, label, sep = "; ")
+      }
+    }
+  }
   rec
 }
 

@@ -12,7 +12,6 @@ app_server <- function(input, output, session) {
   mod_inspect_server("inspect", app_state = app_state)
   mod_assess_server("assess", app_state = app_state)
   mod_review_server("review", app_state = app_state)
-  mod_mapping_server("mapping", app_state = app_state)
   mod_visualize_server("visualize", app_state = app_state)
   mod_export_server("export", app_state = app_state)
   mod_about_server("about")

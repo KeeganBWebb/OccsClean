@@ -140,6 +140,16 @@ test_that("occurrence review collapses flags and supports pass/fail/return", {
   choices <- OccsClean:::review_column_filter_choices(occ, "scientificName")
   expect_equal(choices, c("a", "b"))
 
+  check_parts <- OccsClean:::review_checks_column_filter_choices(occ)
+  expect_equal(check_parts, c("At (0,0)", "In the ocean"))
+
+  expect_equal(
+    OccsClean:::occurrence_review_status_label(
+      c("review", "pass", "fail", "batch_fail", "batch_pass")
+    ),
+    c("In review", "Passed", "Failed", "Batch Failed", "Batch Passed")
+  )
+
   prepared <- prepare_review_occurrence_table(findings, reg)
   expect_false(is.factor(prepared$occsclean_id))
   expect_false(is.factor(prepared$scientificName))
@@ -147,6 +157,249 @@ test_that("occurrence review collapses flags and supports pass/fail/return", {
   expect_true(is.factor(prepared$review_status))
   expect_true(is.factor(prepared$n_flags))
   expect_equal(levels(prepared$n_flags), c("1", "2"))
+})
+
+test_that("build_review_occurrences includes manually reviewed unflagged records", {
+  findings <- tibble::tibble(
+    check_id = "coord_zero",
+    check_label = "At (0,0)",
+    occsclean_id = "oc_flag",
+    finding = "ZERO",
+    scientificName = "Flagged sp"
+  )
+  occ <- tibble::tibble(
+    occsclean_id = c("oc_flag", "oc_clean"),
+    scientificName = c("Flagged sp", "Clean sp"),
+    decimalLongitude = c("-104", "-105"),
+    decimalLatitude = c("40", "41"),
+    basisOfRecord = c("HumanObservation", "HumanObservation")
+  )
+  reg <- DecisionRegistry$new()
+
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_equal(out$occsclean_id, "oc_flag")
+  expect_true(all(out$review_status == "review"))
+
+  fail_records(reg, "oc_clean", findings = findings)
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_setequal(out$occsclean_id, c("oc_clean", "oc_flag"))
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "fail")
+  expect_equal(out$n_flags[out$occsclean_id == "oc_clean"], 0L)
+  expect_equal(out$scientificName[out$occsclean_id == "oc_clean"], "Clean sp")
+
+  return_records_to_review(reg, "oc_clean", findings = findings)
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_setequal(out$occsclean_id, c("oc_clean", "oc_flag"))
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "review")
+
+  pass_records(reg, "oc_clean", findings = findings)
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "pass")
+})
+
+test_that("return_records_to_review adds unflagged map-only records to review table", {
+  findings <- tibble::tibble(
+    check_id = "coord_zero",
+    check_label = "At (0,0)",
+    occsclean_id = "oc_flag",
+    finding = "ZERO",
+    scientificName = "Flagged sp"
+  )
+  occ <- tibble::tibble(
+    occsclean_id = c("oc_flag", "oc_clean"),
+    scientificName = c("Flagged sp", "Clean sp"),
+    decimalLongitude = c("-104", "-105"),
+    decimalLatitude = c("40", "41")
+  )
+  reg <- DecisionRegistry$new()
+
+  flag_unflagged_for_manual_review(reg, "oc_clean")
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_setequal(out$occsclean_id, c("oc_clean", "oc_flag"))
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "review")
+  expect_equal(out$n_flags[out$occsclean_id == "oc_clean"], 1L)
+  expect_equal(out$checks[out$occsclean_id == "oc_clean"], "MANUAL")
+  expect_equal(
+    occurrence_review_status_label(
+      out$review_status[out$occsclean_id == "oc_clean"]
+    ),
+    "In review"
+  )
+
+  pts <- build_visualize_records(occ, findings = findings, decisions = reg)
+  clean_pt <- pts[pts$occsclean_id == "oc_clean", , drop = FALSE]
+  expect_equal(clean_pt$map_status, "Flagged")
+  expect_equal(clean_pt$n_flags, 1L)
+  expect_equal(clean_pt$flag_labels, "MANUAL")
+
+  fail_records(reg, "oc_clean", findings = findings)
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "fail")
+  expect_equal(out$checks[out$occsclean_id == "oc_clean"], "MANUAL")
+  pts <- build_visualize_records(occ, findings = findings, decisions = reg)
+  clean_pt <- pts[pts$occsclean_id == "oc_clean", , drop = FALSE]
+  expect_equal(clean_pt$map_status, "Failed")
+  expect_equal(clean_pt$flag_labels, "MANUAL")
+
+  pass_records(reg, "oc_clean", findings = findings)
+  out <- build_review_occurrences(findings, reg, occ = occ)
+  expect_equal(out$review_status[out$occsclean_id == "oc_clean"], "pass")
+  expect_equal(out$checks[out$occsclean_id == "oc_clean"], "")
+  pts <- build_visualize_records(occ, findings = findings, decisions = reg)
+  clean_pt <- pts[pts$occsclean_id == "oc_clean", , drop = FALSE]
+  expect_equal(clean_pt$map_status, "Passed")
+  expect_equal(clean_pt$flag_labels, "")
+})
+
+test_that("filter_review_occurrences_by_check_label matches check labels", {
+  occ <- tibble::tibble(
+    occsclean_id = c("oc_1", "oc_2", "oc_3"),
+    checks = c("Missing coordinates", "Basis Of Record", "Missing coordinates; Basis Of Record")
+  )
+  filtered <- OccsClean:::filter_review_occurrences_by_check_label(
+    occ,
+    "Missing coordinates"
+  )
+  expect_equal(filtered$occsclean_id, c("oc_1", "oc_3"))
+  expect_equal(
+    nrow(OccsClean:::filter_review_occurrences_by_check_label(occ, "")),
+    3L
+  )
+  expect_equal(
+    nrow(
+      OccsClean:::filter_review_occurrences_by_check_label(
+        occ,
+        OccsClean:::review_check_flag_all_value()
+      )
+    ),
+    3L
+  )
+  expect_true(OccsClean:::review_check_flag_is_all(""))
+  expect_true(
+    OccsClean:::review_check_flag_is_all(OccsClean:::review_check_flag_all_value())
+  )
+  expect_false(OccsClean:::review_check_flag_is_all("Missing coordinates"))
+})
+
+test_that("review_map_view_lnglat nudges null island off exact zero", {
+  view <- OccsClean:::review_map_view_lnglat(0, 0)
+  expect_false(view$lng == 0 && view$lat == 0)
+  expect_equal(view$lng, 0.0001)
+  expect_equal(view$lat, 0.0001)
+  other <- OccsClean:::review_map_view_lnglat(-105, 40)
+  expect_equal(other$lng, -105)
+  expect_equal(other$lat, 40)
+})
+
+test_that("batch fail actions mark occurrences as Batch Failed in review table", {
+  findings <- tibble::tibble(
+    check_id = c("coord_zero", "coord_zero", "coord_zero"),
+    check_label = c("At (0,0)", "At (0,0)", "At (0,0)"),
+    occsclean_id = c("oc_1", "oc_2", "oc_3"),
+    finding = c("ZERO", "ZERO", "ZERO"),
+    scientificName = c("a", "b", "c")
+  )
+  reg <- DecisionRegistry$new()
+  fail_records(reg, c("oc_1", "oc_2"), findings = findings, batch = TRUE)
+
+  occ <- build_review_occurrences(findings, reg)
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_1"], "batch_fail")
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_2"], "batch_fail")
+  expect_equal(
+    occurrence_review_status_label("batch_fail"),
+    "Batch Failed"
+  )
+  expect_setequal(
+    OccsClean:::batch_failed_occsclean_ids(reg),
+    c("oc_1", "oc_2")
+  )
+
+  fail_records(reg, "oc_3", findings = findings, batch = FALSE)
+  occ <- build_review_occurrences(findings, reg)
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_3"], "fail")
+})
+
+test_that("batch pass actions mark occurrences as Batch Passed in review table", {
+  findings <- tibble::tibble(
+    check_id = c("coord_zero", "coord_zero", "coord_zero"),
+    check_label = c("At (0,0)", "At (0,0)", "At (0,0)"),
+    occsclean_id = c("oc_1", "oc_2", "oc_3"),
+    finding = c("ZERO", "ZERO", "ZERO"),
+    scientificName = c("a", "b", "c")
+  )
+  reg <- DecisionRegistry$new()
+  pass_records(reg, c("oc_1", "oc_2"), findings = findings, batch = TRUE)
+
+  occ <- build_review_occurrences(findings, reg)
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_1"], "batch_pass")
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_2"], "batch_pass")
+  expect_equal(
+    occurrence_review_status_label("batch_pass"),
+    "Batch Passed"
+  )
+  expect_setequal(
+    OccsClean:::batch_passed_occsclean_ids(reg),
+    c("oc_1", "oc_2")
+  )
+
+  pass_records(reg, "oc_3", findings = findings, batch = FALSE)
+  occ <- build_review_occurrences(findings, reg)
+  expect_equal(occ$review_status[occ$occsclean_id == "oc_3"], "pass")
+})
+
+test_that("review_panel_map_status maps batch_fail to Failed for map panel", {
+  expect_equal(
+    OccsClean:::review_panel_map_status("batch_fail", 1L),
+    "Failed"
+  )
+  expect_equal(
+    OccsClean:::review_panel_map_status("batch_pass", 1L),
+    "Passed"
+  )
+})
+
+test_that("review_panel_map_status maps occurrence review rows to map statuses", {
+  expect_equal(
+    OccsClean:::review_panel_map_status("review", 2L),
+    "Flagged"
+  )
+  expect_equal(
+    OccsClean:::review_panel_map_status("review", 0L),
+    "Flagged"
+  )
+  expect_equal(
+    OccsClean:::review_panel_map_status("review", 0L),
+    "OK"
+  )
+  expect_equal(
+    OccsClean:::review_panel_map_status("pass", 0L),
+    "Passed"
+  )
+  expect_equal(
+    OccsClean:::review_panel_map_status("fail", 3L),
+    "Failed"
+  )
+})
+
+test_that("review_table_coord_map embeds follow payloads for mappable rows", {
+  df <- tibble::tibble(
+    occsclean_id = c("oc_zero", "oc_missing"),
+    checks = c("At (0,0)", "Missing coordinates")
+  )
+  coords <- tibble::tibble(
+    occsclean_id = c("oc_zero", "oc_missing"),
+    longitude = c(0, NA_real_),
+    latitude = c(0, NA_real_),
+    mappable = c(TRUE, FALSE)
+  )
+  out <- OccsClean:::review_table_coord_map(df, coords)
+  expect_length(out, 1L)
+  expect_equal(out$oc_zero$id, "oc_zero")
+  expect_equal(out$oc_zero$lng, 0)
+  expect_equal(out$oc_zero$lat, 0)
+  expect_equal(out$oc_zero$viewLng, 0.0001)
+  expect_equal(out$oc_zero$viewLat, 0.0001)
+  expect_null(out$oc_missing)
 })
 
 test_that("filter_review_occurrences_by_checks requires all selected checks", {

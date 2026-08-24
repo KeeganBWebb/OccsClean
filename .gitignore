@@ -1,0 +1,36 @@
+# Private / local notes
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+
+# renv library (lockfile is tracked)
+renv/library/
+renv/local/
+renv/cellar/
+renv/sandbox/
+renv/staging/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Build artifacts
+*.tar.gz
+*.Rcheck/
+inst/doc
+
+# Local-only testing data (not shipped with the package)
+data-raw/
+
+# testthat plot artifacts
+tests/testthat/Rplots.pdf
+Rplots.pdf
+
+# Local planning docs (not for public clone/ZIP)
+PROJECT.md
+ROADMAP.md
+
+OccsClean.Rproj
+inst/app/
+man/

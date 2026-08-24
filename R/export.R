@@ -6,6 +6,7 @@
 excluded_from_cleaned_ids <- function(decisions, findings = NULL) {
   failed <- as.character(decisions$removed_occsclean_ids())
 
+  findings <- append_manual_review_findings(findings, decisions)
   if (is.null(findings) || !is.data.frame(findings) || nrow(findings) < 1) {
     return(unique(failed))
   }
@@ -189,7 +190,7 @@ build_processing_log <- function(session) {
     paste0("Delimiter detected: ", meta$delimiter %||% "(unknown)"),
     paste0("Original records: ", counts$n_original),
     paste0("Failed (excluded from cleaned): ", counts$n_removed),
-    paste0("Cleaned records: ", counts$n_cleaned),
+    paste0("Records remaining in cleaned CSV: ", counts$n_cleaned),
     "",
     "Checks conducted",
     "----------------"
@@ -199,7 +200,12 @@ build_processing_log <- function(session) {
     lines <- c(lines, "(No checks have been run yet.)")
   } else {
     flagged_all <- findings_with_decisions(
-      session$get_findings_table(),
+      append_manual_review_findings(
+        session$get_findings_table(),
+        session$get_decisions(),
+        occ = session$get_occ_working(),
+        column_map = session$get_column_map()
+      ),
       session$get_decisions()
     )
 
@@ -263,6 +269,54 @@ build_processing_log <- function(session) {
           lines,
           paste0("    messages: ", paste(res$messages, collapse = " | "))
         )
+      }
+    }
+
+    manual_all <- flagged_all[
+      as.character(flagged_all$check_id) == manual_review_check_id(),
+      ,
+      drop = FALSE
+    ]
+    if (nrow(manual_all) > 0) {
+      decision_counts <- flag_decision_counts(manual_all, manual_review_check_id())
+      lines <- c(
+        lines,
+        "",
+        "Manual review flags",
+        "-------------------",
+        paste0("- ", manual_review_check_label(), " [", manual_review_check_id(), "]"),
+        paste0("    flagged: ", decision_counts$n_flagged)
+      )
+      if (decision_counts$n_flagged > 0) {
+        lines <- c(
+          lines,
+          paste0(
+            "    failed: ",
+            decision_counts$n_removed,
+            " of ",
+            decision_counts$n_flagged,
+            " flagged"
+          ),
+          paste0(
+            "    passed: ",
+            decision_counts$n_kept,
+            " of ",
+            decision_counts$n_flagged,
+            " flagged"
+          )
+        )
+        if (decision_counts$n_unreviewed > 0) {
+          lines <- c(
+            lines,
+            paste0(
+              "    in review: ",
+              decision_counts$n_unreviewed,
+              " of ",
+              decision_counts$n_flagged,
+              " flagged"
+            )
+          )
+        }
       }
     }
   }

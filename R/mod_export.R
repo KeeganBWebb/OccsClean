@@ -7,7 +7,7 @@ mod_export_ui <- function(id) {
     shiny::h3("Export"),
     shiny::uiOutput(ns("warning")),
     shiny::p(
-      "Download the original CSV, the cleaned CSV,",
+      "Download the original CSV, the cleaned CSV (flagged and failed occurrences removed),",
       "flagged occurrences (with decisions),",
       "and a processing log of which checks were run.",
       "You can also download a text file that holds the recommended citations",
@@ -48,13 +48,11 @@ mod_export_server <- function(id, app_state) {
         s$get_decisions(),
         findings = s$get_findings_table()
       )
-      flagged <- export_flagged_occurrences(s)
       paste0(
         "Original records: ", counts$n_original, "\n",
         "Excluded from cleaned (failed or still unreviewed flags): ",
         counts$n_removed, "\n",
-        "Cleaned records: ", counts$n_cleaned, "\n",
-        "Flagged finding rows: ", nrow(flagged), "\n",
+        "Records remaining in cleaned CSV: ", counts$n_cleaned, "\n",
         "Checks in current assessment: ", length(s$get_assessment())
       )
     })
@@ -140,8 +138,14 @@ mod_export_server <- function(id, app_state) {
 #' @param session An [OccSession].
 #' @noRd
 export_flagged_occurrences <- function(session) {
-  flagged <- findings_with_decisions(
+  findings <- append_manual_review_findings(
     session$get_findings_table(),
+    session$get_decisions(),
+    occ = session$get_occ_working(),
+    column_map = session$get_column_map()
+  )
+  flagged <- findings_with_decisions(
+    findings,
     session$get_decisions()
   )
   slim_flag_columns(flagged, for_export = TRUE)

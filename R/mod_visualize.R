@@ -21,9 +21,9 @@ mod_visualize_ui <- function(id) {
     ),
     shiny::h4("Decisions by flag category"),
     shiny::p(
-      "For each check with findings, compare Passed, In Review, and Failed",
-      "counts. Counts are findings, not unique occurrences, meaning one record",
-      "can appear under several checks."
+      "For each check with findings (not counting manually flagged records), compare",
+      "Passed, In Review, and Failed counts. Counts are findings, not unique",
+      "occurrences, meaning one record can appear under several checks."
     ),
     shiny::div(
       class = "oc-decision-chart",

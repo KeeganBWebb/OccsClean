@@ -2,7 +2,7 @@
 
 Guided Shiny app in R for cleaning biodiversity species occurrence data. Built for researchers and students who have little coding experience and want established R cleaning methods without having to dive into coding (yet...).
 
-**Early development** (`0.2.1`). OccsClean never overwrites your uploaded file, exports are separate downloads.
+**Early development** (`0.3.0`). OccsClean never overwrites your uploaded file, exports are separate downloads.
 
 ## Install
 

@@ -179,6 +179,7 @@ plot_removal_funnel <- function(funnel) {
 visualize_status_label <- function(status) {
   out <- as.character(status)
   out[out == "OK"] <- "Unflagged"
+  out[out == "Flagged"] <- "In review"
   out[out == "Passed"] <- "Passed"
   out[out == "Failed"] <- "Failed"
   out[out == "Kept"] <- "Passed"
