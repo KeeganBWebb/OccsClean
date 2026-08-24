@@ -113,7 +113,7 @@ test_that("occurrence review collapses flags and supports pass/fail/return", {
   expect_equal(nrow(occ), 2)
   expect_equal(occ$n_flags[occ$occsclean_id == "oc_1"], 2L)
   expect_true(grepl("In the ocean", occ$checks[occ$occsclean_id == "oc_1"], fixed = TRUE))
-  expect_true(grepl("At \\(0,0\\)", occ$checks[occ$occsclean_id == "oc_1"], fixed = TRUE))
+  expect_true(grepl("At (0,0)", occ$checks[occ$occsclean_id == "oc_1"], fixed = TRUE))
   expect_true(all(occ$review_status == "review"))
 
   pass_records(reg, "oc_1", findings = findings)
@@ -366,10 +366,6 @@ test_that("review_panel_map_status maps occurrence review rows to map statuses",
   expect_equal(
     OccsClean:::review_panel_map_status("review", 0L),
     "Flagged"
-  )
-  expect_equal(
-    OccsClean:::review_panel_map_status("review", 0L),
-    "OK"
   )
   expect_equal(
     OccsClean:::review_panel_map_status("pass", 0L),

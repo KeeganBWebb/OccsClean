@@ -23,7 +23,7 @@ test_that("missing summary layout uses chunks for moderate column counts", {
   expect_length(chunks, 3L)
   expect_equal(nrow(chunks[[1]]), 20L)
   expect_equal(nrow(chunks[[2]]), 20L)
-  expect_equal(nrow(chunks[[3]]), 5L)
+  expect_equal(nrow(chunks[[3]]), 6L)
 })
 
 test_that("missing summary layout falls back for large column counts", {

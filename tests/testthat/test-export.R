@@ -30,10 +30,11 @@ test_that("append_manual_review_findings matches coordinate column types", {
 test_that("export flagged includes manually flagged records with decisions", {
   s <- OccSession$new()
   s$import_csv(testthat::test_path("fixtures", "example_occurrences.csv"))
-  s$run_checks(check_ids = "coord_equal")
+  s$run_checks(check_ids = "coord_zero")
 
   occ <- s$get_occ_working()
   findings <- s$get_findings_table()
+  expect_gt(nrow(findings), 0)
   flagged_ids <- unique(as.character(findings$occsclean_id))
   clean_id <- setdiff(as.character(occ$occsclean_id), flagged_ids)[[1]]
 
@@ -69,10 +70,11 @@ test_that("export flagged includes manually flagged records with decisions", {
 test_that("cleaned export excludes manually flagged unreviewed records", {
   s <- OccSession$new()
   s$import_csv(testthat::test_path("fixtures", "example_occurrences.csv"))
-  s$run_checks(check_ids = "coord_equal")
+  s$run_checks(check_ids = "coord_zero")
 
   occ <- s$get_occ_working()
   findings <- s$get_findings_table()
+  expect_gt(nrow(findings), 0)
   flagged_ids <- unique(as.character(findings$occsclean_id))
   clean_id <- setdiff(as.character(occ$occsclean_id), flagged_ids)[[1]]
 
